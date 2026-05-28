@@ -19,8 +19,12 @@ logger.setLevel(logging.INFO)
 
 s3 = boto3.client("s3")
 
-RAW_BUCKET = os.environ["RAW_BUCKET"]
 STREAMING_PREFIX = "streaming"
+
+
+def _raw_bucket() -> str:
+    return os.environ["RAW_BUCKET"]
+
 
 # Fields every valid order event must contain
 REQUIRED_FIELDS = ("invoice", "stockcode", "quantity", "price", "customerid")
@@ -76,12 +80,12 @@ def process_file(bucket: str, key: str) -> int:
     out_key = f"{STREAMING_PREFIX}/" f"year={now.year}/month={now.month}/" f"{source_name}.json"
 
     out_body = "\n".join(json.dumps(e) for e in valid_events)
-    s3.put_object(Bucket=RAW_BUCKET, Key=out_key, Body=out_body.encode("utf-8"))
+    s3.put_object(Bucket=_raw_bucket(), Key=out_key, Body=out_body.encode("utf-8"))
 
     logger.info(
         "Wrote %d valid events to s3://%s/%s",
         len(valid_events),
-        RAW_BUCKET,
+        _raw_bucket(),
         out_key,
     )
     return len(valid_events)

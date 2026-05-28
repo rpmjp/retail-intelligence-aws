@@ -1,0 +1,54 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: S3 buckets for retail intelligence data lake (raw + curated zones)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: retail-intelligence
+    Description: Prefix for all bucket names
+
+Resources:
+  RawZoneBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-raw-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Zone
+          Value: raw
+
+  CuratedZoneBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${ProjectName}-curated-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Zone
+          Value: curated
+
+Outputs:
+  RawBucketName:
+    Value: !Ref RawZoneBucket
+    Export:
+      Name: !Sub "${ProjectName}-raw-bucket"
+
+  CuratedBucketName:
+    Value: !Ref CuratedZoneBucket
+    Export:
+      Name: !Sub "${ProjectName}-curated-bucket"

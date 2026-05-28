@@ -1,0 +1,4 @@
+{"invoice": "536400", "stockcode": "21730", "description": "GLASS STAR FROSTED T-LIGHT HOLDER", "quantity": 6, "price": 4.25, "customerid": 17850, "country": "United Kingdom"}
+{"invoice": "536401", "stockcode": "22111", "quantity": -5, "price": 2.10, "customerid": 17851, "country": "United Kingdom"}
+{"this is": "not a valid order at all"}
+{"invoice": "536402", "stockcode": "22112", "description": "VALID ORDER", "quantity": 3, "price": 1.95, "customerid": 17852, "country": "France"}

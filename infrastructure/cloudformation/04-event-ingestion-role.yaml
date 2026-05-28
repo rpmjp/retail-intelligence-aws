@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Event-driven ingestion - SQS dead-letter queue and Lambda execution role
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: retail-intelligence
+
+Resources:
+  # Dead-letter queue for events that fail processing after retries
+  IngestionDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${ProjectName}-ingestion-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days for investigation
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-ingestion-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-ingestion-permissions"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Read the incoming file that triggered the event
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource: !Sub "arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}/incoming/*"
+              # Write validated events to the streaming zone
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub "arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}/streaming/*"
+              # Route failures to the DLQ
+              - Effect: Allow
+                Action:
+                  - sqs:SendMessage
+                Resource: !GetAtt IngestionDLQ.Arn
+
+Outputs:
+  DLQArn:
+    Value: !GetAtt IngestionDLQ.Arn
+    Export:
+      Name: !Sub "${ProjectName}-ingestion-dlq-arn"
+  DLQUrl:
+    Value: !Ref IngestionDLQ
+  LambdaRoleArn:
+    Value: !GetAtt LambdaExecutionRole.Arn
+    Export:
+      Name: !Sub "${ProjectName}-ingestion-lambda-role-arn"

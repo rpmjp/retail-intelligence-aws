@@ -33,3 +33,5 @@ logs/
 
 # Jupyter (if used later)
 .ipynb_checkpoints/
+
+.gitignore

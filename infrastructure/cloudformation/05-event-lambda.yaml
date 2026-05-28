@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Event-driven ingestion Lambda function with async DLQ destination
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: retail-intelligence
+  CodeBucket:
+    Type: String
+    Description: S3 bucket holding the Lambda zip
+  CodeKey:
+    Type: String
+    Default: lambda/event_ingestion/handler.zip
+
+Resources:
+  IngestionFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ProjectName}-event-ingestion"
+      Runtime: python3.13
+      Handler: handler.lambda_handler
+      Role:
+        Fn::ImportValue: !Sub "${ProjectName}-ingestion-lambda-role-arn"
+      Code:
+        S3Bucket: !Ref CodeBucket
+        S3Key: !Ref CodeKey
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          RAW_BUCKET: !Sub "${ProjectName}-raw-${AWS::AccountId}"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Async invocation config: retry twice, then route failures to the DLQ
+  InvokeConfig:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref IngestionFunction
+      Qualifier: "$LATEST"
+      MaximumRetryAttempts: 2
+      DestinationConfig:
+        OnFailure:
+          Destination:
+            Fn::ImportValue: !Sub "${ProjectName}-ingestion-dlq-arn"
+
+  # Allow the raw bucket to invoke this function
+  S3InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IngestionFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${ProjectName}-raw-${AWS::AccountId}"
+      SourceAccount: !Ref AWS::AccountId
+
+Outputs:
+  FunctionArn:
+    Value: !GetAtt IngestionFunction.Arn
+  FunctionName:
+    Value: !Ref IngestionFunction

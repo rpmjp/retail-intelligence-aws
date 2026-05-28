@@ -1,0 +1,9 @@
+boto3
+pandas
+pyarrow
+python-dotenv
+pyyaml
+pytest
+moto
+black
+ruff

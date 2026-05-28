@@ -1,0 +1,35 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+
+# Data (never commit raw or processed data)
+data/raw/
+data/processed/
+data/curated/
+!data/sample/
+
+# AWS
+*.pem
+.aws/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Jupyter (if used later)
+.ipynb_checkpoints/

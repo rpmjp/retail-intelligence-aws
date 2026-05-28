@@ -14,8 +14,7 @@ import pytest
 from moto import mock_aws
 
 # Make the lambda module importable without installing it
-LAMBDA_DIR = Path(__file__).parent.parent / "lambdas" / "event_ingestion"
-sys.path.insert(0, str(LAMBDA_DIR))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 RAW_BUCKET = "test-raw-bucket"
@@ -77,7 +76,7 @@ def _find_streaming_key(s3) -> str:
 
 def test_happy_path_writes_all_valid_events(aws_env):
     """Three valid events should all be written to the streaming zone."""
-    import handler
+    from lambdas.event_ingestion import handler
 
     s3 = aws_env
     body = "\n".join(json.dumps(_valid_order(inv)) for inv in ["536365", "536366", "536367"])
@@ -95,7 +94,7 @@ def test_happy_path_writes_all_valid_events(aws_env):
 
 def test_missing_required_field_is_skipped(aws_env):
     """A record missing required fields is skipped, valid ones still processed."""
-    import handler
+    from lambdas.event_ingestion import handler
 
     s3 = aws_env
     valid = _valid_order("536400")
@@ -111,7 +110,7 @@ def test_missing_required_field_is_skipped(aws_env):
 
 def test_negative_quantity_is_skipped(aws_env):
     """Records with non-positive quantity fail validation and are skipped."""
-    import handler
+    from lambdas.event_ingestion import handler
 
     s3 = aws_env
     valid = _valid_order("536500")
@@ -127,7 +126,7 @@ def test_negative_quantity_is_skipped(aws_env):
 
 def test_malformed_json_line_is_skipped(aws_env):
     """A line of broken JSON is skipped, valid records continue."""
-    import handler
+    from lambdas.event_ingestion import handler
 
     s3 = aws_env
     valid = _valid_order("536600")
@@ -141,7 +140,7 @@ def test_malformed_json_line_is_skipped(aws_env):
 
 def test_zero_valid_events_raises(aws_env):
     """A file with no salvageable records raises so the async path hits the DLQ."""
-    import handler
+    from lambdas.event_ingestion import handler
 
     s3 = aws_env
     body = json.dumps({"garbage": "no fields"})
@@ -153,7 +152,7 @@ def test_zero_valid_events_raises(aws_env):
 
 def test_idempotent_output_key(aws_env):
     """Reprocessing the same file overwrites rather than creating duplicates."""
-    import handler
+    from lambdas.event_ingestion import handler
 
     s3 = aws_env
     body = json.dumps(_valid_order("536700"))
@@ -177,7 +176,7 @@ def test_idempotent_output_key(aws_env):
 
 def test_url_encoded_key_is_decoded(aws_env):
     """S3 event keys arrive URL-encoded; the handler must decode them."""
-    import handler
+    from lambdas.event_ingestion import handler
 
     s3 = aws_env
     actual_key = "incoming/test orders.json"  # space in filename

@@ -1,0 +1,65 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: IAM role for the data quality Lambda (Athena queries + S3 results)
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: retail-intelligence
+
+Resources:
+  QualityLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ProjectName}-quality-lambda-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: !Sub "${ProjectName}-quality-permissions"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Athena query execution
+              - Effect: Allow
+                Action:
+                  - athena:StartQueryExecution
+                  - athena:GetQueryExecution
+                  - athena:GetQueryResults
+                  - athena:StopQueryExecution
+                Resource: "*"
+              # Glue catalog read (Athena needs this)
+              - Effect: Allow
+                Action:
+                  - glue:GetTable
+                  - glue:GetTables
+                  - glue:GetDatabase
+                  - glue:GetPartitions
+                Resource: "*"
+              # Read curated zone (Athena reads data here)
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub "arn:aws:s3:::${ProjectName}-curated-${AWS::AccountId}"
+                  - !Sub "arn:aws:s3:::${ProjectName}-curated-${AWS::AccountId}/*"
+              # Write Athena query results
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub "arn:aws:s3:::${ProjectName}-curated-${AWS::AccountId}/athena-results/*"
+                  - !Sub "arn:aws:s3:::${ProjectName}-curated-${AWS::AccountId}"
+
+Outputs:
+  RoleArn:
+    Value: !GetAtt QualityLambdaRole.Arn
+    Export:
+      Name: !Sub "${ProjectName}-quality-lambda-role-arn"

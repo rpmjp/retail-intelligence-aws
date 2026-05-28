@@ -1,5 +1,5 @@
 {
-  "Comment": "Retail intelligence pipeline: Glue ETL then crawler",
+  "Comment": "Retail intelligence pipeline: Glue ETL, quality checks, then crawler",
   "StartAt": "RunGlueETL",
   "States": {
     "RunGlueETL": {
@@ -7,6 +7,25 @@
       "Resource": "arn:aws:states:::glue:startJobRun.sync",
       "Parameters": {
         "JobName": "retail-clean-job"
+      },
+      "Next": "RunQualityChecks",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PipelineFailed"
+        }
+      ]
+    },
+    "RunQualityChecks": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "retail-intelligence-quality-checks",
+        "Payload": {}
+      },
+      "ResultSelector": {
+        "status.$": "$.Payload.status",
+        "checks.$": "$.Payload.checks"
       },
       "Next": "StartCrawler",
       "Catch": [
@@ -36,7 +55,7 @@
     "PipelineFailed": {
       "Type": "Fail",
       "Error": "PipelineError",
-      "Cause": "Glue ETL or crawler step failed"
+      "Cause": "Glue ETL, quality checks, or crawler step failed"
     }
   }
 }

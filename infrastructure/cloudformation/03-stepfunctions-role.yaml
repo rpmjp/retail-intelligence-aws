@@ -32,6 +32,10 @@ Resources:
                   - glue:StartCrawler
                   - glue:GetCrawler
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:retail-intelligence-quality-checks"
 
 Outputs:
   StepFunctionsRoleArn:

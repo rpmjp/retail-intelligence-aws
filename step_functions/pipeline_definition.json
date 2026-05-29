@@ -12,7 +12,7 @@
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "Next": "PipelineFailed"
+          "Next": "NotifyFailure"
         }
       ]
     },
@@ -31,7 +31,7 @@
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "Next": "PipelineFailed"
+          "Next": "NotifyFailure"
         }
       ]
     },
@@ -45,7 +45,7 @@
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "Next": "PipelineFailed"
+          "Next": "NotifyFailure"
         }
       ]
     },
@@ -59,7 +59,7 @@
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "Next": "PipelineFailed"
+          "Next": "NotifyFailure"
         }
       ]
     },
@@ -73,12 +73,22 @@
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
-          "Next": "PipelineFailed"
+          "Next": "NotifyFailure"
         }
       ]
     },
     "PipelineSucceeded": {
       "Type": "Succeed"
+    },
+    "NotifyFailure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sns:publish",
+      "Parameters": {
+        "TopicArn": "arn:aws:sns:us-east-1:606493606327:retail-intelligence-alerts",
+        "Subject": "Retail pipeline FAILED",
+        "Message.$": "States.JsonToString($)"
+      },
+      "Next": "PipelineFailed"
     },
     "PipelineFailed": {
       "Type": "Fail",

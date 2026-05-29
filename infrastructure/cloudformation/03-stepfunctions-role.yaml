@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: "2010-09-09"
-Description: IAM role for Step Functions to orchestrate Glue jobs and crawlers
+Description: IAM role for Step Functions to orchestrate Glue jobs, invoke Lambda, and publish to SNS
 
 Parameters:
   ProjectName:
@@ -19,7 +19,7 @@ Resources:
               Service: states.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: !Sub "${ProjectName}-sfn-glue-access"
+        - PolicyName: !Sub "${ProjectName}-sfn-orchestration-access"
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -36,6 +36,10 @@ Resources:
                 Action:
                   - lambda:InvokeFunction
                 Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:retail-intelligence-quality-checks"
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:retail-intelligence-alerts"
 
 Outputs:
   StepFunctionsRoleArn:

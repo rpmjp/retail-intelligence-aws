@@ -1,0 +1,34 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Athena workgroup with per-query scan limit and result location
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: retail-intelligence
+  ScanLimitBytes:
+    Type: Number
+    Default: 1073741824
+    Description: Per-query scan limit in bytes (default 1 GB)
+
+Resources:
+  RetailWorkgroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: !Sub "${ProjectName}-workgroup"
+      Description: Bounded workgroup for the retail pipeline, with a 1 GB per-query scan limit
+      State: ENABLED
+      WorkGroupConfiguration:
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
+        BytesScannedCutoffPerQuery: !Ref ScanLimitBytes
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${ProjectName}-curated-${AWS::AccountId}/athena-results/"
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+Outputs:
+  WorkgroupName:
+    Value: !Ref RetailWorkgroup
+    Export:
+      Name: !Sub "${ProjectName}-athena-workgroup"

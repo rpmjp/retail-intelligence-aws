@@ -1,0 +1,22 @@
+{
+  "Rules": [
+    {
+      "ID": "expire-athena-results-7-days",
+      "Status": "Enabled",
+      "Filter": { "Prefix": "athena-results/" },
+      "Expiration": { "Days": 7 }
+    },
+    {
+      "ID": "expire-noncurrent-versions-30-days",
+      "Status": "Enabled",
+      "Filter": {},
+      "NoncurrentVersionExpiration": { "NoncurrentDays": 30 }
+    },
+    {
+      "ID": "abort-incomplete-multipart-7-days",
+      "Status": "Enabled",
+      "Filter": {},
+      "AbortIncompleteMultipartUpload": { "DaysAfterInitiation": 7 }
+    }
+  ]
+}

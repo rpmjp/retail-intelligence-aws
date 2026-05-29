@@ -1,0 +1,52 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Alerting - SNS topic for pipeline alerts + CloudWatch alarm on DLQ depth
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: retail-intelligence
+  AlertEmail:
+    Type: String
+    Description: Email address to receive pipeline alerts
+
+Resources:
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${ProjectName}-alerts"
+      DisplayName: Retail Intelligence Pipeline Alerts
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+
+  AlertsEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertsTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  IngestionDLQDepthAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${ProjectName}-ingestion-dlq-has-messages"
+      AlarmDescription: Fires when the event-ingestion DLQ holds any failed messages
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !Sub "${ProjectName}-ingestion-dlq"
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertsTopic
+
+Outputs:
+  TopicArn:
+    Value: !Ref AlertsTopic
+    Export:
+      Name: !Sub "${ProjectName}-alerts-topic-arn"

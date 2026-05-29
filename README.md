@@ -71,14 +71,14 @@ These pivots are honest engineering responses to a real constraint, and both res
 | Service | Role in the pipeline |
 |---|---|
 | **S3** | Multi-zone data lake: raw (incoming + landing), streaming (event-driven raw), curated (Parquet), warehouse (aggregations), athena-results, scripts |
-| **AWS Glue (PySpark)** | Two ETL jobs: clean batch data, build warehouse aggregations |
+| **AWS Glue (PySpark)** | Two ETL jobs (clean batch data, build warehouse aggregations) with **bookmarks enabled** so reruns only process new files |
 | **Glue Crawlers + Data Catalog** | Schema inference and table registration across curated, streaming, and warehouse zones |
-| **Step Functions** | Orchestrates the batch ETL + crawler with explicit error handling via Catch states |
-| **AWS Lambda (Python 3.13)** | Event-driven consumer triggered by S3, with idempotent writes and validation |
+| **Step Functions** | Orchestrates the batch ETL, a quality-check Lambda, and the crawler, with explicit error handling via Catch states. **Quality failures block the crawler step** (fail-fast on bad data) |
+| **AWS Lambda (Python 3.13)** | Two functions: an event-driven ingestion consumer triggered by S3, and a synchronous data quality Lambda invoked by Step Functions |
 | **SQS** | Dead-letter queue for unrecoverable Lambda failures, with 14-day retention |
 | **Amazon Athena** | Serverless SQL over Parquet, plus three reusable views as the warehouse query surface |
 | **CloudFormation** | Infrastructure as code for every bucket, role, queue, Lambda, and orchestration resource |
-| **IAM** | Least-privilege service roles for Glue, Step Functions, and Lambda |
+| **IAM** | Least-privilege service roles for Glue, Step Functions, and both Lambdas |
 
 ---
 
@@ -90,26 +90,30 @@ retail-intelligence-aws/
 │   └── cloudformation/
 │       ├── 01-s3-buckets.yaml              # Raw + curated data lake buckets
 │       ├── 02-glue-role.yaml               # Glue service IAM role
-│       ├── 03-stepfunctions-role.yaml      # Step Functions orchestration role
-│       ├── 04-event-ingestion-role.yaml    # Lambda execution role + SQS DLQ
-│       └── 05-event-lambda.yaml            # Lambda function + async failure destination
+│       ├── 03-stepfunctions-role.yaml      # Step Functions role (Glue + Lambda invoke)
+│       ├── 04-event-ingestion-role.yaml    # Event-ingestion Lambda role + SQS DLQ
+│       ├── 05-event-lambda.yaml            # Event-ingestion Lambda + async failure destination
+│       └── 06-quality-lambda-role.yaml     # Quality-checks Lambda IAM role
 ├── ingestion/
 │   └── batch/
 │       └── upload_raw_to_s3.py             # Combine Excel sheets, push to raw zone
 ├── glue_jobs/
-│   ├── clean_retail_data.py                # PySpark batch ETL: clean + partition to Parquet
+│   ├── clean_retail_data.py                # Bookmark-aware, schema-evolution-tolerant batch ETL
 │   └── build_warehouse.py                  # PySpark warehouse build: daily revenue, RFM, top products
 ├── lambdas/
-│   └── event_ingestion/
-│       └── handler.py                      # Event-driven consumer: validate, write raw, fail to DLQ
+│   ├── event_ingestion/
+│   │   └── handler.py                      # Event-driven consumer: validate, write raw, fail to DLQ
+│   └── quality_checks/
+│       └── handler.py                      # Data quality assertions (Athena-backed)
 ├── step_functions/
-│   └── pipeline_definition.json            # State machine: ETL -> crawler, with Catch states
+│   └── pipeline_definition.json            # State machine: ETL -> quality -> crawler, Catch on each
 ├── queries/
 │   └── athena/
 │       ├── 01_monthly_revenue.sql          # Example analytics query
 │       └── 02_warehouse_views.sql          # Three warehouse views
 ├── tests/
-│   └── test_event_ingestion.py             # moto-mocked unit tests (7 cases)
+│   ├── test_event_ingestion.py             # moto-mocked Lambda unit tests (7 cases)
+│   └── test_quality_checks.py              # mocked-Athena unit tests (4 cases)
 ├── scripts/
 │   └── setup_glue_resources.sh             # Reproducibly create Glue DB, job, crawler
 ├── screenshots/                            # Console proof of execution
@@ -139,9 +143,24 @@ retail-intelligence-aws/
 
 Partitioning by date means queries that filter on a time range scan only the relevant partitions instead of the whole dataset, which is the core mechanism behind the efficiency gains shown below.
 
+**Incremental processing via Glue job bookmarks.** The job uses Glue's `create_dynamic_frame.from_options` with a `transformation_ctx`, which activates bookmarks. After the first full load, subsequent runs read only files added to `raw/online_retail/` since the last successful run. A run with no new files exits with "Nothing to process" in under a minute, instead of reprocessing 1M rows.
+
+**Schema-evolution tolerance.** A declarative `CURATED_OPTIONAL_COLUMNS` dictionary lists fields that may or may not be present in incoming files. If a column is missing in a batch, the job backfills it as `NULL` so the curated table stays consistent. Adding a new optional column to the schema in the future is a one-line change.
+
 ### 3. Orchestration (Step Functions)
 
-`step_functions/pipeline_definition.json` defines a state machine that runs the Glue job synchronously, then triggers the crawler, with `Catch` states routing any failure to a dedicated `PipelineFailed` state. This turns a sequence of manual CLI calls into a single auditable, re-runnable workflow with built-in error handling.
+`step_functions/pipeline_definition.json` defines a state machine that runs the Glue job synchronously, then invokes the data quality Lambda, then triggers the crawler. Every step has a `Catch` clause routing failures to a dedicated `PipelineFailed` state. This turns a sequence of manual CLI calls into a single auditable, re-runnable workflow with built-in error handling.
+
+The workflow is **fail-fast on data quality**: if any quality assertion fails, the Lambda raises `QualityCheckFailed`, the Catch fires, and the crawler step never runs. Bad curated data never propagates downstream to the catalog or analysts.
+
+The data quality Lambda (`lambdas/quality_checks/handler.py`) runs four assertions against Athena, in parallel within a single invocation:
+
+- **Row count** above a minimum threshold (catches catastrophic data loss)
+- **Critical-field null rate** under threshold for `invoice`, `customerid`, `revenue` (catches silent schema drift)
+- **Revenue sanity** total above a minimum (catches an empty or corrupted load)
+- **Partition presence** all expected year partitions exist (catches missing data)
+
+Each check returns a structured result. On success, the function returns a JSON summary that Step Functions records in the execution history.
 
 ### 4. Event-driven ingestion (S3 -> Lambda -> DLQ)
 
@@ -238,15 +257,19 @@ The substantive outcome: 1.07 million raw transactions become a small set of dec
 
 ![Glue job run history](screenshots/glue/job_run.png)
 
+**Bookmark proof: a follow-up run with no new files exits cleanly without reprocessing the existing 1M+ rows:**
+
+![Glue bookmark skipped no new files](screenshots/glue/bookmark_no_new_files.png)
+
 **Glue Data Catalog schema for the curated table, with `year` and `month` registered as partition keys:**
 
 ![Glue catalog table schema](screenshots/glue/catalog_table.png)
 
 ### Orchestration (Step Functions)
 
-**State machine execution: RunGlueETL then StartCrawler, both green, with `PipelineFailed` defined as a Catch destination:**
+**State machine execution: RunGlueETL, then RunQualityChecks (Lambda), then StartCrawler, all green, with `PipelineFailed` defined as the Catch destination on every step:**
 
-![Step Functions execution graph](screenshots/step_functions/execution_graph.png)
+![Step Functions execution graph with quality checks](screenshots/step_functions/with_quality_checks.png)
 
 ### Event-driven ingestion (Lambda + SQS)
 
@@ -280,11 +303,17 @@ The substantive outcome: 1.07 million raw transactions become a small set of dec
 
 ![Athena customer segments via view](screenshots/athena/customer_segments.png)
 
+**Schema-evolution proof: a follow-up file with a new `loyalty_tier` column lands in the same curated table. Athena queries old (legacy, NULL tier) and new (Gold/Silver/Bronze) rows together with no breakage:**
+
+![Athena schema evolution query](screenshots/athena/schema_evolution.png)
+
 ---
 
 ## Tests
 
-`tests/test_event_ingestion.py` uses `moto` to mock S3 and run seven unit tests against the Lambda handler:
+Two test files run on every push via GitHub Actions, alongside `ruff` lint and `black` format checks. Both use mocked AWS so they run offline in well under a second.
+
+**`tests/test_event_ingestion.py`** (7 cases, `moto`-mocked S3):
 
 - Happy path: three valid events written
 - Missing required field: skipped, valid records still processed
@@ -294,7 +323,14 @@ The substantive outcome: 1.07 million raw transactions become a small set of dec
 - Idempotency: reprocessing the same file overwrites rather than duplicates
 - URL-encoded S3 keys: decoded correctly
 
-Tests run in under a second and execute on every push via the GitHub Actions CI workflow at `.github/workflows/ci.yml`, alongside ruff lint and black format checks.
+**`tests/test_quality_checks.py`** (4 cases, mocked Athena client):
+
+- All metrics within thresholds: handler returns `PASSED`
+- Row count below threshold: raises `QualityCheckFailed`
+- Missing year partition: raises `QualityCheckFailed`
+- Non-zero nulls in a critical column: raises `QualityCheckFailed`
+
+CI workflow: `.github/workflows/ci.yml`.
 
 ---
 
@@ -352,6 +388,14 @@ aws glue start-crawler --name retail-warehouse-crawler
 ---
 
 ## Design Decisions and Lessons Learned
+
+**Incremental processing via bookmarks, not full reloads.** The batch ETL uses Glue job bookmarks so reruns are O(new data) instead of O(total data). A rerun with no new files exits in under a minute. This is how real lakes handle continuous ingestion without burning compute on already-processed files.
+
+**Append, not overwrite, on bookmarked writes.** With bookmarks enabled, each run writes a new partition slice, so the curated table uses `mode("append")`. Combined with idempotent partition keys (`year`, `month`), reruns add to the lake instead of clobbering it.
+
+**Fail-fast data quality, not best-effort.** Data quality checks run inside the orchestrated pipeline, and a failure raises `QualityCheckFailed`, which Step Functions catches and routes to `PipelineFailed`. The downstream crawler never runs if quality is bad. The alternative ("warn and continue") is how silently corrupted dashboards happen.
+
+**Schema evolution as a one-line change.** A declarative `CURATED_OPTIONAL_COLUMNS` dictionary lists optional fields. The job backfills missing columns as `NULL` so old and new schemas coexist in the same table. New optional fields can be added without breaking existing partitions or downstream queries.
 
 **Parquet over CSV in the curated zone.** Columnar Parquet with Snappy compression enables predicate pushdown and column pruning, so Athena reads only the columns and partitions a query touches. The 1.70 MB curated scan and 44.91 KB warehouse-view scan are this decision made measurable.
 

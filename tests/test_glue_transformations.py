@@ -37,28 +37,11 @@ def spark():
 
 def _sample_raw_rows():
     """Synthetic raw rows mimicking Online Retail II columns and dirtiness."""
+    uk = "United Kingdom"
     return [
         # Valid
-        (
-            "536365",
-            "85123A",
-            "WHITE HEART",
-            "6",
-            "2010-12-01 08:26:00",
-            "2.55",
-            "17850",
-            "United Kingdom",
-        ),
-        (
-            "536366",
-            "22633",
-            "HAND WARMER",
-            "12",
-            "2010-12-01 08:30:00",
-            "1.85",
-            "17851",
-            "United Kingdom",
-        ),
+        ("536365", "85123A", "WHITE HEART", "6", "2010-12-01 08:26:00", "2.55", "17850", uk),
+        ("536366", "22633", "HAND WARMER", "12", "2010-12-01 08:30:00", "1.85", "17851", uk),
         # Cancelled invoice (starts with C)
         (
             "C536367",
@@ -71,16 +54,7 @@ def _sample_raw_rows():
             "France",
         ),
         # Null customer
-        (
-            "536368",
-            "21730",
-            "T-LIGHT HOLDER",
-            "8",
-            "2010-12-01 09:15:00",
-            "4.25",
-            None,
-            "United Kingdom",
-        ),
+        ("536368", "21730", "T-LIGHT HOLDER", "8", "2010-12-01 09:15:00", "4.25", None, uk),
         # Negative quantity
         ("536369", "22112", "BAD ROW", "-3", "2010-12-01 10:00:00", "1.95", "17853", "Germany"),
         # Zero price

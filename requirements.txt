@@ -8,3 +8,4 @@ moto
 black
 ruff
 openpyxl
+pyspark==3.5.0

@@ -1,5 +1,5 @@
 {
-  "Comment": "Retail intelligence pipeline: Glue ETL, quality checks, then crawler",
+  "Comment": "End-to-end retail intelligence pipeline: ETL, quality, curated catalog, warehouse build, warehouse catalog",
   "StartAt": "RunGlueETL",
   "States": {
     "RunGlueETL": {
@@ -27,7 +27,7 @@
         "status.$": "$.Payload.status",
         "checks.$": "$.Payload.checks"
       },
-      "Next": "StartCrawler",
+      "Next": "RunCuratedCrawler",
       "Catch": [
         {
           "ErrorEquals": ["States.ALL"],
@@ -35,11 +35,39 @@
         }
       ]
     },
-    "StartCrawler": {
+    "RunCuratedCrawler": {
       "Type": "Task",
       "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
       "Parameters": {
         "Name": "retail-curated-crawler"
+      },
+      "Next": "BuildWarehouse",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PipelineFailed"
+        }
+      ]
+    },
+    "BuildWarehouse": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::glue:startJobRun.sync",
+      "Parameters": {
+        "JobName": "retail-build-warehouse"
+      },
+      "Next": "RunWarehouseCrawler",
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "Next": "PipelineFailed"
+        }
+      ]
+    },
+    "RunWarehouseCrawler": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:glue:startCrawler",
+      "Parameters": {
+        "Name": "retail-warehouse-crawler"
       },
       "Next": "PipelineSucceeded",
       "Catch": [
@@ -55,7 +83,7 @@
     "PipelineFailed": {
       "Type": "Fail",
       "Error": "PipelineError",
-      "Cause": "Glue ETL, quality checks, or crawler step failed"
+      "Cause": "One or more pipeline stages failed"
     }
   }
 }
